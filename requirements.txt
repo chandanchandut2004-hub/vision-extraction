@@ -4,3 +4,4 @@ torchvision==0.15.2
 numpy==1.24.3
 Pillow==10.0.1
 opencv-python-headless==4.8.1.78
+segmentation-models-pytorch==0.3.2
