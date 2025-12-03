@@ -1,0 +1,12 @@
+torch torchvision
+segmentation-models-pytorch
+timm
+Pillow
+numpy
+matplotlib
+# For option A:
+streamlit
+# For option B:
+flask
+# For option C:
+gradio
