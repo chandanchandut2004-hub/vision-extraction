@@ -1,12 +1,8 @@
-torch torchvision
-segmentation-models-pytorch
-timm
-Pillow
-numpy
-matplotlib
-# For option A:
-streamlit
-# For option B:
-flask
-# For option C:
-gradio
+streamlit==1.28.0
+torch==2.0.1
+torchvision==0.15.2
+numpy==1.24.3
+Pillow==10.0.1
+opencv-python-headless==4.8.1.78
+segmentation-models-pytorch==0.3.2
+timm==0.6.13
