@@ -107,50 +107,66 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --------------------------------------------------------------------
-#  SIMPLE BACKGROUND REMOVAL (NO AI MODEL NEEDED)
+#  BACKGROUND REMOVAL FUNCTION - FIXED VERSION
 # --------------------------------------------------------------------
 def remove_background_simple(image):
     """Simple background removal using OpenCV"""
-    img_np = np.array(image)
-    
-    # Convert to grayscale
-    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-    
-    # Apply threshold - adjust these values based on your image
-    _, mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
-    
-    # Clean up the mask
-    kernel = np.ones((5,5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    
-    # Apply Gaussian blur for smoother edges
-    mask = cv2.GaussianBlur(mask, (5,5), 0)
-    
-    # Create transparent background
-    rgba = np.zeros((img_np.shape[0], img_np.shape[1], 4), dtype=np.uint8)
-    rgba[:, :, :3] = img_np
-    rgba[:, :, 3] = mask
-    
-    # Create overlay for visualization
-    overlay = img_np.copy()
-    overlay[mask > 128] = [255, 255, 0]  # Yellow
-    
-    return rgba, overlay, mask
+    try:
+        # Convert PIL Image to numpy array
+        img_np = np.array(image)
+        
+        # Convert to grayscale
+        gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+        
+        # Apply threshold - for light backgrounds
+        _, mask = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY_INV)
+        
+        # Alternative: For dark backgrounds, use adaptive thresholding
+        if np.mean(mask) < 50:  # If mask is mostly black
+            mask = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                        cv2.THRESH_BINARY_INV, 11, 2)
+        
+        # Clean up the mask
+        kernel = np.ones((3,3), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        
+        # Apply Gaussian blur for smoother edges
+        mask = cv2.GaussianBlur(mask, (3,3), 0)
+        
+        # Create transparent background (RGBA)
+        rgba = np.zeros((img_np.shape[0], img_np.shape[1], 4), dtype=np.uint8)
+        rgba[:, :, :3] = img_np  # Copy RGB channels
+        
+        # Use mask as alpha channel (make background transparent where mask is white)
+        rgba[:, :, 3] = mask
+        
+        # Create overlay for visualization (yellow highlight)
+        overlay = img_np.copy()
+        
+        # Create yellow mask
+        yellow = np.zeros_like(img_np)
+        yellow[:, :] = [255, 255, 0]  # Yellow color
+        
+        # Apply yellow to areas where mask is > 0
+        overlay[mask > 0] = yellow[mask > 0]
+        
+        return rgba, overlay, mask
+        
+    except Exception as e:
+        st.error(f"Background removal error: {str(e)}")
+        # Return original image as fallback
+        img_np = np.array(image)
+        rgba = np.zeros((img_np.shape[0], img_np.shape[1], 4), dtype=np.uint8)
+        rgba[:, :, :3] = img_np
+        rgba[:, :, 3] = 255  # Fully opaque
+        
+        overlay = img_np.copy()
+        return rgba, overlay, np.ones((img_np.shape[0], img_np.shape[1]), dtype=np.uint8) * 255
 
 # --------------------------------------------------------------------
 #  UTILITY FUNCTIONS
 # --------------------------------------------------------------------
-def create_mask_overlay(image, mask, alpha=0.6):
-    image_np = np.array(image)
-    mask_resized = cv2.resize(mask, (image_np.shape[1], image_np.shape[0]))
-    
-    colored_mask = np.zeros_like(image_np)
-    colored_mask[mask_resized > 0.3] = [0, 255, 255]
-    
-    overlay = cv2.addWeighted(image_np, 1 - alpha, colored_mask, alpha, 0)
-    return overlay
-
 def apply_image_adjustments(image, adjustments):
     img = image.copy()
     
@@ -178,9 +194,9 @@ def apply_image_adjustments(image, adjustments):
         img_np = np.array(img, dtype=np.float32)
         temp_val = float(adjustments['temperature'])
         if temp_val > 1.0:
-            img_np[:, :, 0] = np.clip(img_np[:, :, 0] * temp_val, 0, 255)
+            img_np[:, :, 0] = np.clip(img_np[:, :, 0] * temp_val, 0, 255)  # Increase red
         else:
-            img_np[:, :, 2] = np.clip(img_np[:, :, 2] * (2 - temp_val), 0, 255)
+            img_np[:, :, 2] = np.clip(img_np[:, :, 2] * (2 - temp_val), 0, 255)  # Increase blue
         img = Image.fromarray(img_np.astype(np.uint8))
     
     if adjustments['clarity'] != 1.0:
@@ -222,10 +238,10 @@ def process_image_optimized(uploaded_file):
     try:
         original_img = Image.open(uploaded_file).convert("RGB")
         
-        with st.spinner("Processing..."):
+        with st.spinner("Processing image..."):
             adjusted_img = apply_image_adjustments(original_img, st.session_state.image_adjustments)
             
-            # Use simple background removal
+            # Use improved background removal
             cutout_rgba, overlay, mask = remove_background_simple(adjusted_img)
             
             result = {
@@ -246,13 +262,11 @@ def process_image_optimized(uploaded_file):
         return None
 
 # --------------------------------------------------------------------
-#  HOME PAGE - CLEAN AND PROFESSIONAL
+#  HOME PAGE
 # --------------------------------------------------------------------
 def show_home_page():
-    # Header
     st.markdown('<div class="main-header">VisionCraft AI</div>', unsafe_allow_html=True)
     
-    # Features - Small and compact
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -260,7 +274,7 @@ def show_home_page():
         <div class="feature-card">
             <div class="feature-icon">⚡</div>
             <div class="feature-title">Lightning Fast</div>
-            <div class="feature-desc">Quick image processing with AI technology</div>
+            <div class="feature-desc">Quick image processing</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -269,7 +283,7 @@ def show_home_page():
         <div class="feature-card">
             <div class="feature-icon">🎯</div>
             <div class="feature-title">Pixel Precision</div>
-            <div class="feature-desc">Accurate object detection and segmentation</div>
+            <div class="feature-desc">Accurate background removal</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -278,15 +292,13 @@ def show_home_page():
         <div class="feature-card">
             <div class="feature-icon">🔧</div>
             <div class="feature-title">Professional Tools</div>
-            <div class="feature-desc">Advanced controls for perfect results</div>
+            <div class="feature-desc">Advanced controls</div>
         </div>
         """, unsafe_allow_html=True)
     
-    # Demo Section - Only "See The Transformation"
     st.markdown('<div class="demo-section">', unsafe_allow_html=True)
     st.markdown('<div class="demo-title">See The Transformation</div>', unsafe_allow_html=True)
     
-    # Image Comparison - Small and horizontal
     col1, col2, col3 = st.columns([1, 0.1, 1])
     
     with col1:
@@ -297,13 +309,11 @@ def show_home_page():
                 st.image(sample_before, width=250)
                 st.markdown('<div class="image-label">Original</div>', unsafe_allow_html=True)
             else:
-                # Use a placeholder image
-                placeholder_before = Image.new('RGB', (250, 200), color=(102, 126, 234))
-                st.image(placeholder_before, width=250)
+                # Create placeholder
+                st.image("https://via.placeholder.com/250x200/667eea/ffffff?text=ORIGINAL+IMAGE", width=250)
                 st.markdown('<div class="image-label">Original</div>', unsafe_allow_html=True)
-        except Exception as e:
-            placeholder_before = Image.new('RGB', (250, 200), color=(102, 126, 234))
-            st.image(placeholder_before, width=250)
+        except:
+            st.image("https://via.placeholder.com/250x200/667eea/ffffff?text=ORIGINAL+IMAGE", width=250)
             st.markdown('<div class="image-label">Original</div>', unsafe_allow_html=True)
     
     with col2:
@@ -317,19 +327,15 @@ def show_home_page():
                 st.image(sample_after, width=250)
                 st.markdown('<div class="image-label">Cutout</div>', unsafe_allow_html=True)
             else:
-                # Use a placeholder image with green background
-                placeholder_after = Image.new('RGB', (250, 200), color=(150, 206, 180))
-                st.image(placeholder_after, width=250)
+                st.image("https://via.placeholder.com/250x200/96CEB4/2c3e50?text=BACKGROUND+REMOVED", width=250)
                 st.markdown('<div class="image-label">Cutout</div>', unsafe_allow_html=True)
-        except Exception as e:
-            placeholder_after = Image.new('RGB', (250, 200), color=(150, 206, 180))
-            st.image(placeholder_after, width=250)
+        except:
+            st.image("https://via.placeholder.com/250x200/96CEB4/2c3e50?text=BACKGROUND+REMOVED", width=250)
             st.markdown('<div class="image-label">Cutout</div>', unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # CTA Button
-    if st.button("TRY IT", use_container_width=True, type="primary"):
+    if st.button("TRY IT NOW", use_container_width=True, type="primary"):
         st.session_state.show_uploader = True
         st.session_state.current_page = "process"
         st.rerun()
@@ -348,7 +354,7 @@ def show_settings_page():
         )
         
         mask_level = st.slider(
-            "Threshold Level",
+            "Mask Threshold",
             min_value=0.1,
             max_value=0.9,
             value=0.5,
@@ -367,136 +373,150 @@ def show_settings_page():
             st.success("Settings applied")
 
 def show_manual_edit_page():
-    st.markdown('<div class="main-header">MANUAL EDIT</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">EDIT IMAGE</div>', unsafe_allow_html=True)
     
     if st.session_state.processed_image is None:
-        st.warning("Please process an image first")
+        st.warning("Please upload and process an image first")
+        if st.button("Go to Upload", use_container_width=True):
+            st.session_state.show_uploader = True
+            st.session_state.current_page = "process"
+            st.rerun()
         return
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        tab1, tab2 = st.tabs(["CUTOUT", "MASK OVERLAY"])
+        tab1, tab2 = st.tabs(["CUTOUT", "OVERLAY"])
         
         with tab1:
-            cutout_display = st.session_state.processed_image['cutout'][:, :, :3]
-            st.image(cutout_display)
+            # Display cutout (RGBA image)
+            cutout_pil = Image.fromarray(st.session_state.processed_image['cutout'], 'RGBA')
+            st.image(cutout_pil)
         
         with tab2:
-            st.image(st.session_state.processed_image['overlay'])
+            # Display overlay
+            overlay_pil = Image.fromarray(st.session_state.processed_image['overlay'])
+            st.image(overlay_pil)
     
     with col2:
-        st.subheader("Manual Settings")
+        st.subheader("Image Adjustments")
         
-        new_mask_level = st.slider(
-            "Threshold Level",
-            min_value=0.1,
-            max_value=0.9,
-            value=st.session_state.processing_params['mask_level'],
-            step=0.1
-        )
+        brightness = st.slider("Brightness", 0.5, 2.0, st.session_state.image_adjustments['brightness'], 0.1)
+        contrast = st.slider("Contrast", 0.5, 2.0, st.session_state.image_adjustments['contrast'], 0.1)
+        saturation = st.slider("Saturation", 0.5, 2.0, st.session_state.image_adjustments['saturation'], 0.1)
+        sharpness = st.slider("Sharpness", 0.5, 2.0, st.session_state.image_adjustments['sharpness'], 0.1)
         
-        new_resolution = st.selectbox(
-            "RESOLUTION",
-            options=["256x256", "384x384", "512x512"],
-            index=2
-        )
+        st.session_state.image_adjustments['brightness'] = brightness
+        st.session_state.image_adjustments['contrast'] = contrast
+        st.session_state.image_adjustments['saturation'] = saturation
+        st.session_state.image_adjustments['sharpness'] = sharpness
         
-        st.session_state.processing_params['mask_level'] = new_mask_level
-        st.session_state.processing_params['resolution'] = new_resolution
-        
-        st.subheader("Advanced Adjustments")
-        
-        exposure = st.slider(
-            "Exposure", 0.5, 2.0, st.session_state.image_adjustments['exposure'], 0.1
-        )
-        temperature = st.slider(
-            "Temperature", 0.5, 2.0, st.session_state.image_adjustments['temperature'], 0.1
-        )
-        clarity = st.slider(
-            "Clarity", 0.5, 2.0, st.session_state.image_adjustments['clarity'], 0.1
-        )
-        
-        st.session_state.image_adjustments['exposure'] = exposure
-        st.session_state.image_adjustments['temperature'] = temperature
-        st.session_state.image_adjustments['clarity'] = clarity
-        
-        if st.button("Reset Settings", use_container_width=True):
+        if st.button("Reset Adjustments", use_container_width=True):
             reset_adjustments()
-            st.success("Settings reset")
+            st.success("Adjustments reset")
+        
+        # Reprocess button
+        if st.button("Apply Adjustments", use_container_width=True, type="primary"):
+            # Re-process the image with new adjustments
+            if st.session_state.original_image:
+                adjusted_img = apply_image_adjustments(st.session_state.original_image, st.session_state.image_adjustments)
+                cutout_rgba, overlay, mask = remove_background_simple(adjusted_img)
+                
+                st.session_state.processed_image = {
+                    'original': st.session_state.original_image,
+                    'adjusted': adjusted_img,
+                    'cutout': cutout_rgba,
+                    'overlay': overlay,
+                    'mask': mask
+                }
+                st.success("Image updated with new adjustments!")
+                st.rerun()
 
 def show_export_page():
-    st.markdown('<div class="main-header">EXPORT</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">EXPORT IMAGE</div>', unsafe_allow_html=True)
     
     if st.session_state.processed_image is None:
-        st.warning("No image to export")
+        st.warning("No image to export. Please process an image first.")
+        if st.button("Go to Upload", use_container_width=True):
+            st.session_state.show_uploader = True
+            st.session_state.current_page = "process"
+            st.rerun()
         return
     
     col1, col2 = st.columns(2)
     
     with col1:
-        cutout_display = st.session_state.processed_image['cutout'][:, :, :3]
-        st.image(cutout_display)
-        st.caption("CUTOUT")
+        # Show cutout
+        cutout_pil = Image.fromarray(st.session_state.processed_image['cutout'], 'RGBA')
+        st.image(cutout_pil)
+        st.caption("Background Removed (Transparent PNG)")
     
     with col2:
-        st.image(st.session_state.processed_image['overlay'])
-        st.caption("MASK OVERLAY")
+        # Show overlay
+        overlay_pil = Image.fromarray(st.session_state.processed_image['overlay'])
+        st.image(overlay_pil)
+        st.caption("Mask Overlay")
     
-    st.subheader("Download")
+    st.subheader("Download Options")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         buf_png = io.BytesIO()
-        cutout_pil = Image.fromarray(st.session_state.processed_image['cutout'], 'RGBA')
         cutout_pil.save(buf_png, format="PNG")
         st.download_button(
-            "PNG FORMAT",
+            "📥 PNG",
             data=buf_png.getvalue(),
             file_name="cutout.png",
             mime="image/png",
-            use_container_width=True
+            use_container_width=True,
+            help="Transparent background PNG"
         )
     
     with col2:
         buf_jpg = io.BytesIO()
-        cutout_rgb = Image.fromarray(st.session_state.processed_image['cutout'][:, :, :3])
+        # Convert RGBA to RGB with white background for JPG
+        cutout_rgb = Image.new('RGB', cutout_pil.size, (255, 255, 255))
+        cutout_rgb.paste(cutout_pil, mask=cutout_pil.split()[3])
         cutout_rgb.save(buf_jpg, format="JPEG", quality=95)
         st.download_button(
-            "JPG FORMAT",
+            "📥 JPG",
             data=buf_jpg.getvalue(),
             file_name="cutout.jpg",
             mime="image/jpeg",
-            use_container_width=True
+            use_container_width=True,
+            help="JPG with white background"
         )
     
     with col3:
         buf_hq = io.BytesIO()
         cutout_pil.save(buf_hq, format="PNG", optimize=True)
         st.download_button(
-            "HIGH QUALITY",
+            "💎 HQ PNG",
             data=buf_hq.getvalue(),
-            file_name="high_quality.png",
+            file_name="high_quality_cutout.png",
             mime="image/png",
-            use_container_width=True
+            use_container_width=True,
+            help="High quality transparent PNG"
         )
     
     with col4:
         zip_data = create_zip_file({
-            "cutout": Image.fromarray(st.session_state.processed_image['cutout'], 'RGBA'),
-            "overlay": Image.fromarray(st.session_state.processed_image['overlay'])
+            "cutout": cutout_pil,
+            "overlay": overlay_pil,
+            "original": st.session_state.processed_image['original']
         })
         st.download_button(
-            "ZIPFILE",
+            "📦 ALL FILES",
             data=zip_data.getvalue(),
-            file_name="results.zip",
+            file_name="visioncraft_results.zip",
             mime="application/zip",
-            use_container_width=True
+            use_container_width=True,
+            help="Download all files as ZIP"
         )
 
 def render_sidebar():
     with st.sidebar:
-        st.header("Image Adjustments")
+        st.header("🎨 Image Adjustments")
         
         st.subheader("Basic Adjustments")
         st.session_state.image_adjustments['brightness'] = st.slider(
@@ -523,46 +543,33 @@ def render_sidebar():
             "Clarity", 0.5, 2.0, st.session_state.image_adjustments['clarity'], 0.1
         )
         
-        if st.button("Reset Adjustments", use_container_width=True):
+        if st.button("🔄 Reset All", use_container_width=True):
             reset_adjustments()
-            st.success("Adjustments reset")
-        
-        st.markdown("---")
-        st.subheader("Processing Settings")
-        st.session_state.processing_params['resolution'] = st.selectbox(
-            "Resolution",
-            options=["256x256", "384x384", "512x512"],
-            index=2
-        )
-        st.session_state.processing_params['mask_level'] = st.slider(
-            "Threshold Level",
-            min_value=0.1,
-            max_value=0.9,
-            value=st.session_state.processing_params['mask_level'],
-            step=0.1
-        )
+            st.success("All adjustments reset!")
+            st.rerun()
 
 def main():
-    # Navigation - Using YOUR ORIGINAL navigation buttons
+    # Navigation
     nav_col1, nav_col2, nav_col3, nav_col4 = st.columns(4)
     
     with nav_col1:
-        if st.button("Home", use_container_width=True):
+        if st.button("🏠 Home", use_container_width=True):
             st.session_state.current_page = "home"
+            st.session_state.show_uploader = False
             st.rerun()
     
     with nav_col2:
-        if st.button("Settings", use_container_width=True):
+        if st.button("⚙️ Settings", use_container_width=True):
             st.session_state.current_page = "settings"
             st.rerun()
     
     with nav_col3:
-        if st.button("Manual Edit", use_container_width=True):
+        if st.button("✏️ Edit", use_container_width=True):
             st.session_state.current_page = "manual"
             st.rerun()
     
     with nav_col4:
-        if st.button("Export", use_container_width=True):
+        if st.button("📤 Export", use_container_width=True):
             st.session_state.current_page = "export"
             st.rerun()
     
@@ -576,60 +583,62 @@ def main():
     elif st.session_state.current_page == "export":
         show_export_page()
     
-    # Processing Section - Only show when user clicks "TRY IT"
+    # Processing Section
     if st.session_state.show_uploader:
         st.markdown("---")
-        st.markdown('<div class="main-header">PROCESSING</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">UPLOAD & PROCESS</div>', unsafe_allow_html=True)
         
         uploaded_file = st.file_uploader(
-            "Upload your image",
+            "Choose an image (JPG, PNG, JPEG)",
             type=["jpg", "jpeg", "png"],
             label_visibility="collapsed"
         )
         
         if uploaded_file is not None:
             render_sidebar()
+            
             processed_data = process_image_optimized(uploaded_file)
             
             if processed_data:
-                st.success("Image processed successfully!")
+                st.success("✅ Image processed successfully!")
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    # FIX: Using simple st.image() without use_container_width
                     st.image(processed_data['original'])
-                    st.caption("Original")
+                    st.caption("Original Image")
                     
                     st.image(processed_data['adjusted'])
-                    st.caption("Adjusted")
+                    st.caption("After Adjustments")
                 
                 with col2:
+                    # Show cutout (RGB version for display)
                     cutout_display = processed_data['cutout'][:, :, :3]
                     st.image(cutout_display)
-                    st.caption("CUTOUT")
+                    st.caption("Background Removed")
                     
                     st.image(processed_data['overlay'])
-                    st.caption("MASK OVERLAY")
+                    st.caption("Mask Overlay (Yellow shows detected foreground)")
                 
-                # Navigation after processing
-                col1, col2 = st.columns(2)
+                # Action buttons
+                col1, col2, col3 = st.columns(3)
                 with col1:
-                    if st.button("Edit This Image", use_container_width=True):
+                    if st.button("🔄 Process Another", use_container_width=True):
+                        st.session_state.show_uploader = False
+                        st.session_state.processed_image = None
+                        st.session_state.original_image = None
+                        st.session_state.current_page = "home"
+                        st.rerun()
+                
+                with col2:
+                    if st.button("✏️ Edit This Image", use_container_width=True):
                         st.session_state.current_page = "manual"
                         st.rerun()
-                with col2:
-                    if st.button("Export This Image", use_container_width=True):
+                
+                with col3:
+                    if st.button("📤 Export Results", use_container_width=True, type="primary"):
                         st.session_state.current_page = "export"
                         st.rerun()
-                
-                st.markdown("---")
-                if st.button("Process New Image", use_container_width=True):
-                    st.session_state.show_uploader = False
-                    st.session_state.processed_image = None
-                    st.session_state.original_image = None
-                    st.session_state.current_page = "home"
-                    st.rerun()
 
 if __name__ == "__main__":
     main()
