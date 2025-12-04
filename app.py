@@ -3,11 +3,11 @@ import torch
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
 import torchvision.transforms as T
-import segmentation_models_pytorch as smp
 import cv2
 import io
 import zipfile
 import os
+import sys
 
 # --------------------------------------------------------------------
 #  PAGE CONFIG
@@ -110,43 +110,42 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --------------------------------------------------------------------
-#  MODEL LOADING - USING .pth FILE
+#  SIMPLE BACKGROUND REMOVAL (NO AI MODEL NEEDED)
 # --------------------------------------------------------------------
-@st.cache_resource(show_spinner=False)
-def load_segmentation_model():
-    MODEL_PATH = "best_mobilenetv3_unet.pth"
-    try:
-        model = smp.Unet(
-            encoder_name="timm-mobilenetv3_large_100", 
-            encoder_weights=None,
-            in_channels=3,
-            classes=1
-        )
-        checkpoint = torch.load(MODEL_PATH, map_location='cpu')
-        
-        if 'state_dict' in checkpoint:
-            model.load_state_dict(checkpoint['state_dict'])
-        else:
-            model.load_state_dict(checkpoint)
-            
-        model.eval()
-        return model, True
-    except Exception as e:
-        return None, False
-
-model, MODEL_LOADED = load_segmentation_model()
+def remove_background_simple(image):
+    """Simple background removal using OpenCV"""
+    img_np = np.array(image)
+    
+    # Convert to grayscale
+    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    
+    # Apply threshold - adjust these values based on your image
+    _, mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+    
+    # Clean up the mask
+    kernel = np.ones((5,5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    
+    # Apply Gaussian blur for smoother edges
+    mask = cv2.GaussianBlur(mask, (5,5), 0)
+    
+    # Create transparent background
+    rgba = np.zeros((img_np.shape[0], img_np.shape[1], 4), dtype=np.uint8)
+    rgba[:, :, :3] = img_np
+    rgba[:, :, 3] = mask
+    
+    # Create overlay for visualization
+    overlay = img_np.copy()
+    yellow_mask = np.zeros_like(img_np)
+    yellow_mask[:, :] = [255, 255, 0]  # Yellow
+    overlay[mask > 128] = yellow_mask[mask > 128]
+    
+    return rgba, overlay, mask
 
 # --------------------------------------------------------------------
 #  UTILITY FUNCTIONS
 # --------------------------------------------------------------------
-def preprocess_image(image, size=(512, 512)):
-    transform = T.Compose([
-        T.Resize(size),
-        T.ToTensor(),
-        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
-    return transform(image).unsqueeze(0)
-
 def create_mask_overlay(image, mask, alpha=0.6):
     image_np = np.array(image)
     mask_resized = cv2.resize(mask, (image_np.shape[1], image_np.shape[0]))
@@ -231,37 +230,15 @@ def process_image_optimized(uploaded_file):
         with st.spinner("Processing..."):
             adjusted_img = apply_image_adjustments(original_img, st.session_state.image_adjustments)
             
-            size_map = {"256x256": (256, 256), "384x384": (384, 384), "512x512": (512, 512)}
-            proc_size = size_map.get(st.session_state.processing_params['resolution'], (512, 512))
-            
-            x = preprocess_image(adjusted_img, size=proc_size)
-            
-            with torch.no_grad():
-                pred = torch.sigmoid(model(x))[0, 0].numpy()
-            
-            mask_threshold = st.session_state.processing_params['mask_level']
-            mask = (pred > mask_threshold).astype(np.uint8)
-            
-            original_np = np.array(adjusted_img)
-            mask_original_size = cv2.resize(mask, (original_np.shape[1], original_np.shape[0]))
-            
-            # Create proper cutout
-            cutout_rgba = np.zeros((original_np.shape[0], original_np.shape[1], 4), dtype=np.uint8)
-            
-            object_mask = mask_original_size > 0
-            for i in range(3):
-                cutout_rgba[:, :, i] = original_np[:, :, i] * object_mask
-            
-            cutout_rgba[:, :, 3] = object_mask * 255
-            
-            overlay = create_mask_overlay(adjusted_img, mask)
+            # Use simple background removal
+            cutout_rgba, overlay, mask = remove_background_simple(adjusted_img)
             
             result = {
                 'original': original_img,
                 'adjusted': adjusted_img,
                 'cutout': cutout_rgba,
                 'overlay': overlay,
-                'mask': mask_original_size
+                'mask': mask
             }
             
             st.session_state.processed_image = result
@@ -270,6 +247,7 @@ def process_image_optimized(uploaded_file):
         return result
         
     except Exception as e:
+        st.error(f"Processing error: {str(e)}")
         return None
 
 # --------------------------------------------------------------------
@@ -318,16 +296,19 @@ def show_home_page():
     
     with col1:
         try:
-            sample_before_path = "D:\\Segmentation_App\\sample_original2.jpg"
+            sample_before_path = "sample_original2.jpg"
             if os.path.exists(sample_before_path):
                 sample_before = Image.open(sample_before_path)
                 st.image(sample_before, width=250, use_container_width=False)
                 st.markdown('<div class="image-label">Original</div>', unsafe_allow_html=True)
             else:
-                st.image("https://via.placeholder.com/250x200/667eea/ffffff?text=ORIGINAL", width=250)
+                # Use a placeholder image
+                placeholder_before = Image.new('RGB', (250, 200), color=(102, 126, 234))
+                st.image(placeholder_before, width=250, use_container_width=False)
                 st.markdown('<div class="image-label">Original</div>', unsafe_allow_html=True)
         except:
-            st.image("https://via.placeholder.com/250x200/667eea/ffffff?text=ORIGINAL", width=250)
+            placeholder_before = Image.new('RGB', (250, 200), color=(102, 126, 234))
+            st.image(placeholder_before, width=250, use_container_width=False)
             st.markdown('<div class="image-label">Original</div>', unsafe_allow_html=True)
     
     with col2:
@@ -335,16 +316,19 @@ def show_home_page():
     
     with col3:
         try:
-            sample_after_path = "D:\\Segmentation_App\\sample_output2.jpg"
+            sample_after_path = "sample_output2.jpg"
             if os.path.exists(sample_after_path):
                 sample_after = Image.open(sample_after_path)
                 st.image(sample_after, width=250, use_container_width=False)
                 st.markdown('<div class="image-label">Cutout</div>', unsafe_allow_html=True)
             else:
-                st.image("https://via.placeholder.com/250x200/96CEB4/2c3e50?text=CUTOUT", width=250)
+                # Use a placeholder image with green background
+                placeholder_after = Image.new('RGB', (250, 200), color=(150, 206, 180))
+                st.image(placeholder_after, width=250, use_container_width=False)
                 st.markdown('<div class="image-label">Cutout</div>', unsafe_allow_html=True)
         except:
-            st.image("https://via.placeholder.com/250x200/96CEB4/2c3e50?text=CUTOUT", width=250)
+            placeholder_after = Image.new('RGB', (250, 200), color=(150, 206, 180))
+            st.image(placeholder_after, width=250, use_container_width=False)
             st.markdown('<div class="image-label">Cutout</div>', unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
@@ -361,7 +345,7 @@ def show_settings_page():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("Model Parameters")
+        st.subheader("Processing Parameters")
         processing_size = st.selectbox(
             "Processing Resolution",
             options=["256x256", "384x384", "512x512"],
@@ -369,7 +353,7 @@ def show_settings_page():
         )
         
         mask_level = st.slider(
-            "MASK LEVEL",
+            "Threshold Level",
             min_value=0.1,
             max_value=0.9,
             value=0.5,
@@ -410,7 +394,7 @@ def show_manual_edit_page():
         st.subheader("Manual Settings")
         
         new_mask_level = st.slider(
-            "MASK LEVEL",
+            "Threshold Level",
             min_value=0.1,
             max_value=0.9,
             value=st.session_state.processing_params['mask_level'],
@@ -554,7 +538,7 @@ def render_sidebar():
             index=2
         )
         st.session_state.processing_params['mask_level'] = st.slider(
-            "MASK LEVEL",
+            "Threshold Level",
             min_value=0.1,
             max_value=0.9,
             value=st.session_state.processing_params['mask_level'],
@@ -606,7 +590,7 @@ def main():
             label_visibility="collapsed"
         )
         
-        if uploaded_file is not None and MODEL_LOADED:
+        if uploaded_file is not None:
             render_sidebar()
             processed_data = process_image_optimized(uploaded_file)
             
