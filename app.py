@@ -1,13 +1,10 @@
 import streamlit as st
-import torch
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
-import torchvision.transforms as T
 import cv2
 import io
 import zipfile
 import os
-import sys
 
 # --------------------------------------------------------------------
 #  PAGE CONFIG
@@ -137,9 +134,7 @@ def remove_background_simple(image):
     
     # Create overlay for visualization
     overlay = img_np.copy()
-    yellow_mask = np.zeros_like(img_np)
-    yellow_mask[:, :] = [255, 255, 0]  # Yellow
-    overlay[mask > 128] = yellow_mask[mask > 128]
+    overlay[mask > 128] = [255, 255, 0]  # Yellow
     
     return rgba, overlay, mask
 
@@ -299,16 +294,20 @@ def show_home_page():
             sample_before_path = "sample_original2.jpg"
             if os.path.exists(sample_before_path):
                 sample_before = Image.open(sample_before_path)
-                st.image(sample_before, width=250, use_container_width=False)
+                # FIXED: Removed use_container_width parameter
+                st.image(sample_before, width=250)
                 st.markdown('<div class="image-label">Original</div>', unsafe_allow_html=True)
             else:
                 # Use a placeholder image
                 placeholder_before = Image.new('RGB', (250, 200), color=(102, 126, 234))
-                st.image(placeholder_before, width=250, use_container_width=False)
+                # FIXED: Removed use_container_width parameter
+                st.image(placeholder_before, width=250)
                 st.markdown('<div class="image-label">Original</div>', unsafe_allow_html=True)
-        except:
+        except Exception as e:
+            st.warning(f"Could not load sample image: {str(e)}")
             placeholder_before = Image.new('RGB', (250, 200), color=(102, 126, 234))
-            st.image(placeholder_before, width=250, use_container_width=False)
+            # FIXED: Removed use_container_width parameter
+            st.image(placeholder_before, width=250)
             st.markdown('<div class="image-label">Original</div>', unsafe_allow_html=True)
     
     with col2:
@@ -319,16 +318,20 @@ def show_home_page():
             sample_after_path = "sample_output2.jpg"
             if os.path.exists(sample_after_path):
                 sample_after = Image.open(sample_after_path)
-                st.image(sample_after, width=250, use_container_width=False)
+                # FIXED: Removed use_container_width parameter
+                st.image(sample_after, width=250)
                 st.markdown('<div class="image-label">Cutout</div>', unsafe_allow_html=True)
             else:
                 # Use a placeholder image with green background
                 placeholder_after = Image.new('RGB', (250, 200), color=(150, 206, 180))
-                st.image(placeholder_after, width=250, use_container_width=False)
+                # FIXED: Removed use_container_width parameter
+                st.image(placeholder_after, width=250)
                 st.markdown('<div class="image-label">Cutout</div>', unsafe_allow_html=True)
-        except:
+        except Exception as e:
+            st.warning(f"Could not load sample image: {str(e)}")
             placeholder_after = Image.new('RGB', (250, 200), color=(150, 206, 180))
-            st.image(placeholder_after, width=250, use_container_width=False)
+            # FIXED: Removed use_container_width parameter
+            st.image(placeholder_after, width=250)
             st.markdown('<div class="image-label">Cutout</div>', unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
